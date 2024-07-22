@@ -124,7 +124,7 @@ func (c *conn) hijackLocked() (rwc net.Conn, buf *bufio.ReadWriter, err error) {
 			return nil, nil, fmt.Errorf("unexpected Peek failure reading buffered byte: %v", err)
 		}
 	}
-	c.setState(rwc, StateHijacked, runHooks)
+	c.setState(rwc, http.StateHijacked, runHooks)
 	return
 }
 
@@ -1593,12 +1593,12 @@ const (
 	skipHooks = false
 )
 
-func (c *conn) setState(nc net.Conn, state ConnState, runHook bool) {
+func (c *conn) setState(nc net.Conn, state http.ConnState, runHook bool) {
 	srv := c.server
 	switch state {
-	case StateNew:
+	case http.StateNew:
 		srv.trackConn(c, true)
-	case StateHijacked, StateClosed:
+	case http.StateHijacked, http.StateClosed:
 		srv.trackConn(c, false)
 	}
 	if state > 0xff || state < 0 {
@@ -1614,9 +1614,9 @@ func (c *conn) setState(nc net.Conn, state ConnState, runHook bool) {
 	}
 }
 
-func (c *conn) getState() (state ConnState, unixSec int64) {
+func (c *conn) getState() (state http.ConnState, unixSec int64) {
 	packedState := c.curState.Load()
-	return ConnState(packedState & 0xff), int64(packedState >> 8)
+	return http.ConnState(packedState & 0xff), int64(packedState >> 8)
 }
 
 // badRequestError is a literal string (used by in the server in HTML,
@@ -1679,7 +1679,7 @@ func (c *conn) serve(ctx context.Context) {
 				inFlightResponse.reqBody.Close()
 			}
 			c.close()
-			c.setState(c.rwc, StateClosed, runHooks)
+			c.setState(c.rwc, http.StateClosed, runHooks)
 		}
 	}()
 
@@ -1716,7 +1716,7 @@ func (c *conn) serve(ctx context.Context) {
 				// Mark freshly created HTTP/2 as active and prevent any server state hooks
 				// from being run on these connections. This prevents closeIdleConns from
 				// closing such connections. See issue https://golang.org/issue/39776.
-				c.setState(c.rwc, StateActive, skipHooks)
+				c.setState(c.rwc, http.StateActive, skipHooks)
 				fn(c.server, tlsConn, h)
 			}
 			return
@@ -1737,7 +1737,7 @@ func (c *conn) serve(ctx context.Context) {
 		w, err := c.readRequest(ctx)
 		if c.r.remain != c.server.initialReadLimitSize() {
 			// If we read any bytes off the wire, we're active.
-			c.setState(c.rwc, StateActive, runHooks)
+			c.setState(c.rwc, http.StateActive, runHooks)
 		}
 		if err != nil {
 			const errorHeaders = "\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n"
@@ -1823,7 +1823,7 @@ func (c *conn) serve(ctx context.Context) {
 			}
 			return
 		}
-		c.setState(c.rwc, StateIdle, runHooks)
+		c.setState(c.rwc, http.StateIdle, runHooks)
 		c.curReq.Store(nil)
 
 		if !w.conn.server.doKeepAlives() {
@@ -2216,7 +2216,7 @@ type Server struct {
 	// ConnState specifies an optional callback function that is
 	// called when a client connection changes state. See the
 	// ConnState type and associated constants for details.
-	ConnState func(net.Conn, ConnState)
+	ConnState func(net.Conn, http.ConnState)
 
 	// ErrorLog specifies an optional logger for errors accepting
 	// connections, unexpected behavior from handlers, and
@@ -2371,10 +2371,10 @@ func (s *Server) closeIdleConns() bool {
 		// Issue 22682: treat StateNew connections as if
 		// they're idle if we haven't read the first request's
 		// header in over 5 seconds.
-		if st == StateNew && unixSec < time.Now().Unix()-5 {
-			st = StateIdle
+		if st == http.StateNew && unixSec < time.Now().Unix()-5 {
+			st = http.StateIdle
 		}
-		if st != StateIdle || unixSec == 0 {
+		if st != http.StateIdle || unixSec == 0 {
 			// Assume unixSec == 0 means it's a very new
 			// connection, without state set yet.
 			quiescent = false
@@ -2394,58 +2394,6 @@ func (s *Server) closeListenersLocked() error {
 		}
 	}
 	return err
-}
-
-// A ConnState represents the state of a client connection to a server.
-// It's used by the optional Server.ConnState hook.
-type ConnState int
-
-const (
-	// StateNew represents a new connection that is expected to
-	// send a request immediately. Connections begin at this
-	// state and then transition to either StateActive or
-	// StateClosed.
-	StateNew ConnState = iota
-
-	// StateActive represents a connection that has read 1 or more
-	// bytes of a request. The Server.ConnState hook for
-	// StateActive fires before the request has entered a handler
-	// and doesn't fire again until the request has been
-	// handled. After the request is handled, the state
-	// transitions to StateClosed, StateHijacked, or StateIdle.
-	// For HTTP/2, StateActive fires on the transition from zero
-	// to one active request, and only transitions away once all
-	// active requests are complete. That means that ConnState
-	// cannot be used to do per-request work; ConnState only notes
-	// the overall state of the connection.
-	StateActive
-
-	// StateIdle represents a connection that has finished
-	// handling a request and is in the keep-alive state, waiting
-	// for a new request. Connections transition from StateIdle
-	// to either StateActive or StateClosed.
-	StateIdle
-
-	// StateHijacked represents a hijacked connection.
-	// This is a terminal state. It does not transition to StateClosed.
-	StateHijacked
-
-	// StateClosed represents a closed connection.
-	// This is a terminal state. Hijacked connections do not
-	// transition to StateClosed.
-	StateClosed
-)
-
-var stateName = map[ConnState]string{
-	StateNew:      "new",
-	StateActive:   "active",
-	StateIdle:     "idle",
-	StateHijacked: "hijacked",
-	StateClosed:   "closed",
-}
-
-func (c ConnState) String() string {
-	return stateName[c]
 }
 
 // serverHandler delegates to either the server's Handler or
@@ -2610,7 +2558,7 @@ func (srv *Server) Serve(l net.Listener) error {
 		}
 		tempDelay = 0
 		c := srv.newConn(rw)
-		c.setState(c.rwc, StateNew, runHooks) // before Serve can return
+		c.setState(c.rwc, http.StateNew, runHooks) // before Serve can return
 		go c.serve(connCtx)
 	}
 }

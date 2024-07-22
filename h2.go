@@ -4521,7 +4521,7 @@ func (sc *http2serverConn) state(streamID uint32) (http2streamState, *http2strea
 // setConnState calls the net/http ConnState hook for this connection, if configured.
 // Note that the net/http package does StateNew and StateClosed for us.
 // There is currently no plan for StateHijacked or hijacking HTTP/2 connections.
-func (sc *http2serverConn) setConnState(state ConnState) {
+func (sc *http2serverConn) setConnState(state http.ConnState) {
 	if sc.hs.ConnState != nil {
 		sc.hs.ConnState(sc.conn, state)
 	}
@@ -4749,8 +4749,8 @@ func (sc *http2serverConn) serve() {
 	// "StateNew" state. We can't go directly to idle, though.
 	// Active means we read some data and anticipate a request. We'll
 	// do another Active when we get a HEADERS frame.
-	sc.setConnState(StateActive)
-	sc.setConnState(StateIdle)
+	sc.setConnState(http.StateActive)
+	sc.setConnState(http.StateIdle)
 
 	if sc.srv.IdleTimeout != 0 {
 		sc.idleTimer = time.AfterFunc(sc.srv.IdleTimeout, sc.onIdleTimer)
@@ -5474,7 +5474,7 @@ func (sc *http2serverConn) closeStream(st *http2stream, err error) {
 	}
 	delete(sc.streams, st.id)
 	if len(sc.streams) == 0 {
-		sc.setConnState(StateIdle)
+		sc.setConnState(http.StateIdle)
 		if sc.srv.IdleTimeout != 0 {
 			sc.idleTimer.Reset(sc.srv.IdleTimeout)
 		}
@@ -5966,7 +5966,7 @@ func (sc *http2serverConn) newStream(id, pusherID uint32, state http2streamState
 		sc.curClientStreams++
 	}
 	if sc.curOpenStreams() == 1 {
-		sc.setConnState(StateActive)
+		sc.setConnState(http.StateActive)
 	}
 
 	return st
