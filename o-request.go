@@ -1,9 +1,9 @@
-package http
+package server
 
 import (
 	"bufio"
 	"fmt"
-	"github.com/jjjjyx/http/internal/ascii"
+	"github.com/jjjjyx/server/internal/ascii"
 
 	"io"
 	"net/http"

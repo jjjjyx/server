@@ -1,4 +1,4 @@
-module github.com/jjjjyx/http
+module github.com/jjjjyx/server
 
 go 1.21.9
 

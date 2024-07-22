@@ -1,12 +1,13 @@
-package http
+package server
 
 import (
 	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/jjjjyx/http/internal"
-	"github.com/jjjjyx/http/internal/ascii"
+	"github.com/jjjjyx/server/internal"
+	"github.com/jjjjyx/server/internal/ascii"
+
 	"golang.org/x/net/http/httpguts"
 	"io"
 	"net/http"

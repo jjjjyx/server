@@ -4,7 +4,7 @@
 
 //go:build nethttpomithttp2
 
-package http
+package server
 
 import (
 	"errors"
