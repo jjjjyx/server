@@ -3,7 +3,8 @@ package http
 import (
 	"bufio"
 	"fmt"
-	"http/internal/ascii"
+	"github.com/jjjjyx/http/internal/ascii"
+
 	"io"
 	"net/http"
 	"net/textproto"
