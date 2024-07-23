@@ -6002,9 +6002,17 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 	}
 
 	rp.header = make(http.Header)
+	originHeader := make([]string, len(f.Fields))
+	for i := range f.Fields {
+		originHeader[i] = f.Fields[i].Name
+	}
+
 	for _, hf := range f.RegularFields() {
 		rp.header.Add(sc.canonicalHeader(hf.Name), hf.Value)
 	}
+
+	rp.header[OriginHeaderNamesExtraKey] = originHeader
+
 	if rp.authority == "" {
 		rp.authority = rp.header.Get("Host")
 	}
