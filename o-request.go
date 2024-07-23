@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/jjjjyx/server/internal/ascii"
+	"github.com/jjjjyx/server/internal/textproto"
 
 	"io"
 	"net/http"
-	"net/textproto"
+
 	"net/url"
 	"strings"
 	"sync"
@@ -67,11 +68,13 @@ func readRequest(b *bufio.Reader) (req *http.Request, err error) {
 	}
 
 	// Subsequent lines: Key: value.
-	mimeHeader, err := tp.ReadMIMEHeader()
+	mimeHeader, originHeaderOrder, err := tp.ReadMIMERequestHeader()
 	if err != nil {
 		return nil, err
 	}
 	req.Header = http.Header(mimeHeader)
+	req.Header[OriginHeaderNamesExtraKey] = originHeaderOrder
+
 	if len(req.Header["Host"]) > 1 {
 		return nil, fmt.Errorf("too many Host headers")
 	}

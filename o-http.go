@@ -37,3 +37,6 @@ type contextKey struct {
 }
 
 func (k *contextKey) String() string { return "net/http context value " + k.name }
+
+// OriginHeaderNamesExtraKey 在request 中保存原始 读取到的 header 名称和顺序
+const OriginHeaderNamesExtraKey = "x-server-request-header-origin"
