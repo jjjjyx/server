@@ -2448,7 +2448,7 @@ func AllowQuerySemicolons(h http.Handler) http.Handler {
 // the returned error is ErrServerClosed.
 func (srv *Server) ListenAndServe() error {
 	if srv.shuttingDown() {
-		return ErrServerClosed
+		return http.ErrServerClosed
 	}
 	addr := srv.Addr
 	if addr == "" {
@@ -2485,10 +2485,6 @@ func (srv *Server) shouldConfigureHTTP2ForServe() bool {
 	return strSliceContains(srv.TLSConfig.NextProtos, http2NextProtoTLS)
 }
 
-// ErrServerClosed is returned by the Server's Serve, ServeTLS, ListenAndServe,
-// and ListenAndServeTLS methods after a call to Shutdown or Close.
-var ErrServerClosed = errors.New("http: Server closed")
-
 // Serve accepts incoming connections on the Listener l, creating a
 // new service goroutine for each. The service goroutines read requests and
 // then call srv.Handler to reply to them.
@@ -2513,7 +2509,7 @@ func (srv *Server) Serve(l net.Listener) error {
 	}
 
 	if !srv.trackListener(&l, true) {
-		return ErrServerClosed
+		return http.ErrServerClosed
 	}
 	defer srv.trackListener(&l, false)
 
@@ -2532,7 +2528,7 @@ func (srv *Server) Serve(l net.Listener) error {
 		rw, err := l.Accept()
 		if err != nil {
 			if srv.shuttingDown() {
-				return ErrServerClosed
+				return http.ErrServerClosed
 			}
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				if tempDelay == 0 {
