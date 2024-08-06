@@ -10,4 +10,6 @@ type HttpsConn interface {
 
 	http2connectionStater
 	HandshakeContext(ctx context.Context) error
+
+	GetClientHelloRaw() []byte
 }

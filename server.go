@@ -217,7 +217,7 @@ func (cw *chunkWriter) close() {
 // A response represents the server side of an HTTP response.
 type response struct {
 	conn             *conn
-	req              *http.Request // request for this response
+	req              *RequestX // request for this response
 	reqBody          io.ReadCloser
 	cancelCtx        context.CancelFunc // when ServeHTTP exits
 	wroteHeader      bool               // a non-1xx header has been (logically) written
@@ -799,7 +799,7 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 		return nil, err
 	}
 
-	if !http1ServerSupportsRequest(req) {
+	if !http1ServerSupportsRequest(req.Request) {
 		return nil, statusError{http.StatusHTTPVersionNotSupported, "unsupported protocol version"}
 	}
 
@@ -808,7 +808,7 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 
 	hosts, haveHost := req.Header["Host"]
 	//isH2Upgrade := req.isH2Upgrade()
-	isH2Upgrade := isH2Upgrade(req)
+	isH2Upgrade := isH2Upgrade(req.Request)
 	if req.ProtoAtLeast(1, 1) && (!haveHost || len(hosts) == 0) && !isH2Upgrade && req.Method != "CONNECT" {
 		return nil, badRequestError("missing required Host header")
 	}
@@ -855,8 +855,8 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 		// We populate these ahead of time so we're not
 		// reading from req.Header after their Handler starts
 		// and maybe mutates it (Issue 14940)
-		wants10KeepAlive: wantsHttp10KeepAlive(req),
-		wantsClose:       wantsClose(req),
+		wants10KeepAlive: wantsHttp10KeepAlive(req.Request),
+		wantsClose:       wantsClose(req.Request),
 	}
 	if isH2Upgrade {
 		w.closeAfterReply = true
@@ -1782,7 +1782,7 @@ func (c *conn) serve(ctx context.Context) {
 
 		// Expect 100 Continue support
 		req := w.req
-		if expectsContinue(req) {
+		if expectsContinue(req.Request) {
 			if req.ProtoAtLeast(1, 1) && req.ContentLength != 0 {
 				// Wrap the Body reader with one that replies on the connection
 				req.Body = &expectContinueReader{readCloser: req.Body, resp: w}
@@ -2116,7 +2116,7 @@ func stripHostPort(h string) string {
 // Config.NextProtos.
 //
 // Serve always returns a non-nil error.
-func Serve(l net.Listener, handler http.Handler) error {
+func Serve(l net.Listener, handler HandlerX) error {
 	srv := &Server{Handler: handler}
 	return srv.Serve(l)
 }
@@ -2149,7 +2149,7 @@ type Server struct {
 	// See net.Dial for details of the address format.
 	Addr string
 
-	Handler http.Handler // handler to invoke, http.DefaultServeMux if nil
+	Handler HandlerX // handler to invoke, http.DefaultServeMux if nil
 
 	// DisableGeneralOptionsHandler, if true, passes "OPTIONS *" requests to the Handler,
 	// otherwise responds with 200 OK and Content-Length: 0.
@@ -2211,7 +2211,7 @@ type Server struct {
 	// automatically closed when the function returns.
 	// If TLSNextProto is not nil, HTTP/2 support is not enabled
 	// automatically.
-	TLSNextProto map[string]func(*Server, HttpsConn, http.Handler)
+	TLSNextProto map[string]func(*Server, HttpsConn, HandlerX)
 
 	// ConnState specifies an optional callback function that is
 	// called when a client connection changes state. See the
@@ -2402,7 +2402,7 @@ type serverHandler struct {
 	srv *Server
 }
 
-func (sh serverHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (sh serverHandler) ServeHTTP(rw http.ResponseWriter, req *RequestX) {
 	handler := sh.srv.Handler
 	if handler == nil {
 		return
@@ -2787,7 +2787,7 @@ func (oc *onceCloseListener) close() { oc.closeErr = oc.Listener.Close() }
 // globalOptionsHandler responds to "OPTIONS *" requests.
 type globalOptionsHandler struct{}
 
-func (globalOptionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (globalOptionsHandler) ServeHTTP(w http.ResponseWriter, r *RequestX) {
 	w.Header().Set("Content-Length", "0")
 	if r.ContentLength != 0 {
 		// Read up to 4KB of OPTIONS body (as mentioned in the
@@ -2815,7 +2815,7 @@ type initALPNRequest struct {
 // interface we have available.
 func (h initALPNRequest) BaseContext() context.Context { return h.ctx }
 
-func (h initALPNRequest) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (h initALPNRequest) ServeHTTP(rw http.ResponseWriter, req *RequestX) {
 	if req.TLS == nil {
 		req.TLS = &tls.ConnectionState{}
 		*req.TLS = h.c.ConnectionState()

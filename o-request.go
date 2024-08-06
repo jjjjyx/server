@@ -14,11 +14,11 @@ import (
 	"sync"
 )
 
-func readRequest(b *bufio.Reader) (req *http.Request, err error) {
+func readRequest(b *bufio.Reader) (req *RequestX, err error) {
 	tp := newTextprotoReader(b)
 	defer putTextprotoReader(tp)
 
-	req = new(http.Request)
+	req = &RequestX{Request: new(http.Request)}
 
 	// First line: GET /index.html HTTP/1.0
 	var s string
@@ -73,7 +73,10 @@ func readRequest(b *bufio.Reader) (req *http.Request, err error) {
 		return nil, err
 	}
 	req.Header = http.Header(mimeHeader)
-	req.Header[OriginHeaderNamesExtraKey] = originHeaderOrder
+	req.Headers = mimeHeader
+
+	req.HeaderOrder = originHeaderOrder
+	//req.Header[OriginHeaderNamesExtraKey] = originHeaderOrder
 
 	if len(req.Header["Host"]) > 1 {
 		return nil, fmt.Errorf("too many Host headers")
@@ -103,7 +106,7 @@ func readRequest(b *bufio.Reader) (req *http.Request, err error) {
 		return nil, err
 	}
 
-	if isH2Upgrade(req) {
+	if isH2Upgrade(req.Request) {
 		// Because it's neither chunked, nor declared:
 		req.ContentLength = -1
 

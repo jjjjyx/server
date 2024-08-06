@@ -4125,9 +4125,9 @@ func http2ConfigureServer(s *Server, conf *http2Server) error {
 	}
 
 	if s.TLSNextProto == nil {
-		s.TLSNextProto = map[string]func(*Server, HttpsConn, http.Handler){}
+		s.TLSNextProto = map[string]func(*Server, HttpsConn, HandlerX){}
 	}
-	protoHandler := func(hs *Server, c HttpsConn, h http.Handler) {
+	protoHandler := func(hs *Server, c HttpsConn, h HandlerX) {
 		if http2testHookOnConn != nil {
 			http2testHookOnConn()
 		}
@@ -4166,7 +4166,7 @@ type http2ServeConnOpts struct {
 	// Handler specifies which handler to use for processing
 	// requests. If nil, BaseConfig.Handler is used. If BaseConfig
 	// or BaseConfig.Handler is nil, http.DefaultServeMux is used.
-	Handler http.Handler
+	Handler HandlerX
 
 	// UpgradeRequest is an initial request received on a connection
 	// undergoing an h2c upgrade. The request body must have been
@@ -4197,7 +4197,7 @@ func (o *http2ServeConnOpts) baseConfig() *Server {
 	return new(Server)
 }
 
-func (o *http2ServeConnOpts) handler() http.Handler {
+func (o *http2ServeConnOpts) handler() HandlerX {
 	if o != nil {
 		if o.Handler != nil {
 			return o.Handler
@@ -4206,7 +4206,7 @@ func (o *http2ServeConnOpts) handler() http.Handler {
 			return o.BaseConfig.Handler
 		}
 	}
-	return http.DefaultServeMux
+	return DefaultServeMux
 }
 
 // ServeConn serves HTTP/2 requests on the provided connection and
@@ -4223,7 +4223,7 @@ func (o *http2ServeConnOpts) handler() http.Handler {
 // implemented in terms of providing a suitably-behaving net.Conn.
 //
 // The opts parameter is optional. If nil, default values are used.
-func (s *http2Server) ServeConn(c net.Conn, opts *http2ServeConnOpts) {
+func (s *http2Server) ServeConn(c HttpsConn, opts *http2ServeConnOpts) {
 	baseCtx, cancel := http2serverConnBaseContext(c, opts)
 	defer cancel()
 
@@ -4348,10 +4348,10 @@ func (s *http2Server) ServeConn(c net.Conn, opts *http2ServeConnOpts) {
 		hook(sc)
 	}
 
-	if opts.UpgradeRequest != nil {
-		sc.upgradeRequest(opts.UpgradeRequest)
-		opts.UpgradeRequest = nil
-	}
+	//if opts.UpgradeRequest != nil {
+	//	sc.upgradeRequest(opts.UpgradeRequest)
+	//	opts.UpgradeRequest = nil
+	//}
 
 	sc.serve()
 }
@@ -4377,9 +4377,9 @@ type http2serverConn struct {
 	// Immutable:
 	srv              *http2Server
 	hs               *Server
-	conn             net.Conn
+	conn             HttpsConn
 	bw               *http2bufferedWriter // writing to conn
-	handler          http.Handler
+	handler          HandlerX
 	baseCtx          context.Context
 	framer           *http2Framer
 	doneServing      chan struct{}               // closed when serverConn.serve ends
@@ -5863,29 +5863,29 @@ func (sc *http2serverConn) processHeaders(f *http2MetaHeadersFrame) error {
 	return sc.scheduleHandler(id, rw, req, handler)
 }
 
-func (sc *http2serverConn) upgradeRequest(req *http.Request) {
-	sc.serveG.check()
-	id := uint32(1)
-	sc.maxClientStreamID = id
-	st := sc.newStream(id, 0, http2stateHalfClosedRemote)
-	st.reqTrailer = req.Trailer
-	if st.reqTrailer != nil {
-		st.trailer = make(http.Header)
-	}
-	rw := sc.newResponseWriter(st, req)
-
-	// Disable any read deadline set by the net/http package
-	// prior to the upgrade.
-	if sc.hs.ReadTimeout != 0 {
-		sc.conn.SetReadDeadline(time.Time{})
-	}
-
-	// This is the first request on the connection,
-	// so start the handler directly rather than going
-	// through scheduleHandler.
-	sc.curHandlers++
-	go sc.runHandler(rw, req, sc.handler.ServeHTTP)
-}
+//func (sc *http2serverConn) upgradeRequest(req *http.Request) {
+//	sc.serveG.check()
+//	id := uint32(1)
+//	sc.maxClientStreamID = id
+//	st := sc.newStream(id, 0, http2stateHalfClosedRemote)
+//	st.reqTrailer = req.Trailer
+//	if st.reqTrailer != nil {
+//		st.trailer = make(http.Header)
+//	}
+//	rw := sc.newResponseWriter(st, req)
+//
+//	// Disable any read deadline set by the net/http package
+//	// prior to the upgrade.
+//	if sc.hs.ReadTimeout != 0 {
+//		sc.conn.SetReadDeadline(time.Time{})
+//	}
+//
+//	// This is the first request on the connection,
+//	// so start the handler directly rather than going
+//	// through scheduleHandler.
+//	sc.curHandlers++
+//	go sc.runHandler(rw, req, sc.handler.ServeHTTP)
+//}
 
 func (st *http2stream) processTrailerHeaders(f *http2MetaHeadersFrame) error {
 	sc := st.sc
@@ -5972,7 +5972,7 @@ func (sc *http2serverConn) newStream(id, pusherID uint32, state http2streamState
 	return st
 }
 
-func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHeadersFrame) (*http2responseWriter, *http.Request, error) {
+func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHeadersFrame) (*http2responseWriter, *RequestX, error) {
 	sc.serveG.check()
 
 	rp := http2requestParam{
@@ -6002,16 +6002,18 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 	}
 
 	rp.header = make(http.Header)
-	originHeader := make([]string, len(f.Fields))
+	headerOrder := make([]string, len(f.Fields))
+	headers := make(map[string][]string, len(f.Fields))
 	for i := range f.Fields {
-		originHeader[i] = f.Fields[i].Name
+		headerOrder[i] = f.Fields[i].Name
+		headers[f.Fields[i].Name] = append(headers[f.Fields[i].Name], f.Fields[i].Value)
 	}
 
 	for _, hf := range f.RegularFields() {
 		rp.header.Add(sc.canonicalHeader(hf.Name), hf.Value)
 	}
 
-	rp.header[OriginHeaderNamesExtraKey] = originHeader
+	//rp.header[OriginHeaderNamesExtraKey] = originHeader
 
 	if rp.authority == "" {
 		rp.authority = rp.header.Get("Host")
@@ -6036,7 +6038,12 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 			b: &http2dataBuffer{expected: req.ContentLength},
 		}
 	}
-	return rw, req, nil
+	return rw, &RequestX{
+		Request:     req,
+		HeaderOrder: headerOrder,
+		Headers:     headers,
+		ClientHello: sc.conn.GetClientHelloRaw(),
+	}, nil
 }
 
 type http2requestParam struct {
@@ -6135,13 +6142,13 @@ func (sc *http2serverConn) newResponseWriter(st *http2stream, req *http.Request)
 type http2unstartedHandler struct {
 	streamID uint32
 	rw       *http2responseWriter
-	req      *http.Request
-	handler  func(http.ResponseWriter, *http.Request)
+	req      *RequestX
+	handler  func(http.ResponseWriter, *RequestX)
 }
 
 // scheduleHandler starts a handler goroutine,
 // or schedules one to start as soon as an existing handler finishes.
-func (sc *http2serverConn) scheduleHandler(streamID uint32, rw *http2responseWriter, req *http.Request, handler func(http.ResponseWriter, *http.Request)) error {
+func (sc *http2serverConn) scheduleHandler(streamID uint32, rw *http2responseWriter, req *RequestX, handler func(http.ResponseWriter, *RequestX)) error {
 	sc.serveG.check()
 	maxHandlers := sc.advMaxStreams
 	if sc.curHandlers < maxHandlers {
@@ -6186,7 +6193,7 @@ func (sc *http2serverConn) handlerDone() {
 }
 
 // Run on its own goroutine.
-func (sc *http2serverConn) runHandler(rw *http2responseWriter, req *http.Request, handler func(http.ResponseWriter, *http.Request)) {
+func (sc *http2serverConn) runHandler(rw *http2responseWriter, req *RequestX, handler func(http.ResponseWriter, *RequestX)) {
 	defer sc.sendServeMsg(http2handlerDoneMsg)
 	didPanic := true
 	defer func() {
@@ -6215,7 +6222,7 @@ func (sc *http2serverConn) runHandler(rw *http2responseWriter, req *http.Request
 	didPanic = false
 }
 
-func http2handleHeaderListTooLong(w http.ResponseWriter, r *http.Request) {
+func http2handleHeaderListTooLong(w http.ResponseWriter, r *RequestX) {
 	// 10.5.1 Limits on Header Block Size:
 	// .. "A server that receives a larger header block than it is
 	// willing to handle can send an HTTP 431 (Request Header Fields Too
@@ -7034,7 +7041,11 @@ func (sc *http2serverConn) startPush(msg *http2startPushRequest) {
 		}
 
 		sc.curHandlers++
-		go sc.runHandler(rw, req, sc.handler.ServeHTTP)
+		reqx := &RequestX{Request: req}
+		reqx.ClientHello = sc.conn.GetClientHelloRaw()
+		// 这种情况下 header没有顺序，这个顺序无从得知
+
+		go sc.runHandler(rw, &RequestX{Request: req}, sc.handler.ServeHTTP)
 		return promisedID, nil
 	}
 
@@ -7094,8 +7105,8 @@ func http2checkValidHTTP2RequestHeaders(h http.Header) error {
 	return nil
 }
 
-func http2new400Handler(err error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func http2new400Handler(err error) func(http.ResponseWriter, *RequestX) {
+	return func(w http.ResponseWriter, r *RequestX) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 }
