@@ -101,7 +101,7 @@ func readRequest(b *bufio.Reader) (req *RequestX, err error) {
 
 	req.Close = shouldClose(req.ProtoMajor, req.ProtoMinor, req.Header, false)
 
-	err = readTransfer(req, b)
+	err = readTransfer(req.Request, b)
 	if err != nil {
 		return nil, err
 	}
