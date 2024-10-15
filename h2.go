@@ -4249,6 +4249,8 @@ func (s *http2Server) ServeConn(c HttpsConn, opts *http2ServeConnOpts) {
 		serveG:                      http2newGoroutineLock(),
 		pushEnabled:                 true,
 		sawClientPreface:            opts.SawClientPreface,
+		frameCache:                  make(map[http2FrameType]http2Frame, 4),
+		frameFramePriority:          make([]*http2PriorityFrame, 0, 5),
 	}
 
 	s.state.registerConn(sc)
@@ -4429,6 +4431,9 @@ type http2serverConn struct {
 	// Owned by the writeFrameAsync goroutine:
 	headerWriteBuf bytes.Buffer
 	hpackEncoder   *hpack.Encoder
+
+	frameCache         map[http2FrameType]http2Frame
+	frameFramePriority []*http2PriorityFrame
 
 	// Used by startGracefulShutdown.
 	shutdownOnce sync.Once
@@ -5307,6 +5312,7 @@ func (sc *http2serverConn) processFrameFromReader(res http2readFrameResult) bool
 		}
 		err = sc.processFrame(f)
 		if err == nil {
+			sc.recordFrame(f)
 			return true
 		}
 	}
@@ -5332,6 +5338,63 @@ func (sc *http2serverConn) processFrameFromReader(res http2readFrameResult) bool
 	}
 }
 
+func (sc *http2serverConn) getFramesData() FramesData {
+	var ret FramesData
+	if sc.frameCache == nil {
+		return ret
+	}
+	sf := sc.frameCache[http2FrameSettings].(*http2SettingsFrame)
+	for i := 0; i < sf.NumSettings(); i++ {
+		setting := sf.Setting(i)
+		ret.Setting = append(ret.Setting, setting)
+	}
+	wp := sc.frameCache[http2FrameWindowUpdate].(*http2WindowUpdateFrame)
+	ret.Increment = wp.Increment
+
+	mhf := sc.frameCache[http2FrameHeaders].(*http2MetaHeadersFrame)
+
+	ret.HeaderPriority = mhf.Priority
+	ret.HeaderFlag = mhf.Flags
+	for _, field := range mhf.Fields {
+		if field.IsPseudo() {
+			ret.PseudoHeaderNameOrder = append(ret.PseudoHeaderNameOrder, field.Name)
+		} else {
+			ret.HeaderNameOrder = append(ret.HeaderNameOrder, field.Name)
+		}
+	}
+	ret.Priority = make([]http2PriorityFrame, len(sc.frameFramePriority))
+	for i, frame := range sc.frameFramePriority {
+		ret.Priority[i] = *frame
+	}
+
+	return ret
+}
+func (sc *http2serverConn) recordFrame(f http2Frame) {
+	// 在链接过程中 会一直发送帧信息过来，每个请求都可以携带这些数据，但是这些帧信息数据一班不会更新，这里如实记录
+	// 但是不是所有的 frame 都需要记录
+	frameHeader := f.Header()
+
+	switch frameHeader.Type {
+	case http2FrameSettings, http2FrameWindowUpdate, http2FrameHeaders:
+		sc.frameCache[frameHeader.Type] = f
+	case http2FramePriority:
+		if fp, ok := f.(*http2PriorityFrame); ok {
+			// 顺序没有了
+			//sc.frameFramePriority[fp.StreamID] = f
+			n := true
+			for _, frame := range sc.frameFramePriority {
+				if frame.StreamID == fp.StreamID {
+					n = false
+					frame.http2PriorityParam = fp.http2PriorityParam
+				}
+			}
+			if n {
+				sc.frameFramePriority = append(sc.frameFramePriority, fp)
+			}
+		}
+
+	}
+}
 func (sc *http2serverConn) processFrame(f http2Frame) error {
 	sc.serveG.check()
 
@@ -6043,6 +6106,7 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 		HeaderOrder: headerOrder,
 		Headers:     headers,
 		ClientHello: sc.conn.GetClientHelloRaw(),
+		Frames:      sc.getFramesData(),
 	}, nil
 }
 
@@ -7043,6 +7107,7 @@ func (sc *http2serverConn) startPush(msg *http2startPushRequest) {
 		sc.curHandlers++
 		reqx := &RequestX{Request: req}
 		reqx.ClientHello = sc.conn.GetClientHelloRaw()
+		reqx.Frames = sc.getFramesData()
 		// 这种情况下 header没有顺序，这个顺序无从得知
 
 		go sc.runHandler(rw, &RequestX{Request: req}, sc.handler.ServeHTTP)
