@@ -5376,25 +5376,29 @@ func (sc *http2serverConn) getFramesData() FramesData {
 func (sc *http2serverConn) recordFrame(f http2Frame) {
 	// 在链接过程中 会一直发送帧信息过来，每个请求都可以携带这些数据，但是这些帧信息数据一班不会更新，这里如实记录
 	// 但是不是所有的 frame 都需要记录
-	frameHeader := f.Header()
-
-	switch frameHeader.Type {
-	case http2FrameSettings, http2FrameWindowUpdate, http2FrameHeaders:
-		sc.frameCache[frameHeader.Type] = f
-	case http2FramePriority:
-		if fp, ok := f.(*http2PriorityFrame); ok {
-			// 顺序没有了
-			//sc.frameFramePriority[fp.StreamID] = f
-			n := true
-			for _, frame := range sc.frameFramePriority {
-				if frame.StreamID == fp.StreamID {
-					n = false
-					frame.http2PriorityParam = fp.http2PriorityParam
-				}
+	switch d := f.(type) {
+	case *http2SettingsFrame:
+		if d.NumSettings() > 0 && d.NumSettings() <= 100 {
+			sc.frameCache[d.Type] = f
+		}
+	case *http2WindowUpdateFrame:
+		if d.Increment > 0 {
+			sc.frameCache[d.Type] = f
+		}
+	case *http2MetaHeadersFrame:
+		sc.frameCache[d.Type] = f
+	case *http2PriorityFrame:
+		// 用map 顺序没有了
+		//sc.frameFramePriority[fp.StreamID] = f
+		n := true
+		for _, frame := range sc.frameFramePriority {
+			if frame.StreamID == d.StreamID {
+				n = false
+				frame.http2PriorityParam = d.http2PriorityParam
 			}
-			if n {
-				sc.frameFramePriority = append(sc.frameFramePriority, fp)
-			}
+		}
+		if n {
+			sc.frameFramePriority = append(sc.frameFramePriority, d)
 		}
 
 	}

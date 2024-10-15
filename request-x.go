@@ -27,10 +27,11 @@ type FramesData struct {
 	HeaderPriority        http2PriorityParam
 	HeaderFlag            http2Flags // 没什么用
 	Priority              []http2PriorityFrame
+	has                   bool
 }
 
 func (d FramesData) Zero() bool {
-	return d.Increment == 0 || len(d.Setting) == 0 || len(d.HeaderNameOrder) == 0
+	return d.Increment == 0 || len(d.HeaderNameOrder) == 0
 }
 
 // WithContext returns a shallow copy of r with its context changed
