@@ -5506,7 +5506,7 @@ func (sc *http2serverConn) processWindowUpdate(f *http2WindowUpdateFrame) error 
 			return http2goAwayFlowError{}
 		}
 	}
-	sc.frameDataCache.Increment = f.Increment
+	sc.frameDataCache.Increment = uint32(sc.flow.n)
 	sc.scheduleFrameWrite()
 	return nil
 }
