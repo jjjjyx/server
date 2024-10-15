@@ -5501,12 +5501,11 @@ func (sc *http2serverConn) processWindowUpdate(f *http2WindowUpdateFrame) error 
 		if !st.flow.add(int32(f.Increment)) {
 			return sc.countError("bad_flow", http2streamError(f.StreamID, http2ErrCodeFlowControl))
 		}
-		sc.frameDataCache.Increment = uint32(st.flow.n)
 	default: // connection-level flow control
 		if !sc.flow.add(int32(f.Increment)) {
 			return http2goAwayFlowError{}
 		}
-		sc.frameDataCache.Increment = uint32(sc.flow.n)
+		sc.frameDataCache.Increment = f.Increment
 	}
 
 	sc.scheduleFrameWrite()
