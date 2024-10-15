@@ -6114,7 +6114,7 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 		HeaderOrder: headerOrder,
 		Headers:     headers,
 		ClientHello: sc.conn.GetClientHelloRaw(),
-		Frames:      sc.getFramesData(),
+		//Frames:      sc.getFramesData(),
 	}, nil
 }
 
@@ -6290,6 +6290,7 @@ func (sc *http2serverConn) runHandler(rw *http2responseWriter, req *RequestX, ha
 		}
 		rw.handlerDone()
 	}()
+	req.Frames = sc.getFramesData()
 	handler(rw, req)
 	didPanic = false
 }
