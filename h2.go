@@ -5343,25 +5343,29 @@ func (sc *http2serverConn) getFramesData() FramesData {
 	if sc.frameCache == nil {
 		return ret
 	}
-	sf := sc.frameCache[http2FrameSettings].(*http2SettingsFrame)
-	for i := 0; i < sf.NumSettings(); i++ {
-		setting := sf.Setting(i)
-		ret.Setting = append(ret.Setting, setting)
-	}
-	wp := sc.frameCache[http2FrameWindowUpdate].(*http2WindowUpdateFrame)
-	ret.Increment = wp.Increment
-
-	mhf := sc.frameCache[http2FrameHeaders].(*http2MetaHeadersFrame)
-
-	ret.HeaderPriority = mhf.Priority
-	ret.HeaderFlag = mhf.Flags
-	for _, field := range mhf.Fields {
-		if field.IsPseudo() {
-			ret.PseudoHeaderNameOrder = append(ret.PseudoHeaderNameOrder, field.Name)
-		} else {
-			ret.HeaderNameOrder = append(ret.HeaderNameOrder, field.Name)
+	if sf, ok := sc.frameCache[http2FrameSettings].(*http2SettingsFrame); ok {
+		for i := 0; i < sf.NumSettings(); i++ {
+			setting := sf.Setting(i)
+			ret.Setting = append(ret.Setting, setting)
 		}
 	}
+
+	if wp, ok := sc.frameCache[http2FrameWindowUpdate].(*http2WindowUpdateFrame); ok {
+		ret.Increment = wp.Increment
+	}
+
+	if mhf, ok := sc.frameCache[http2FrameHeaders].(*http2MetaHeadersFrame); ok {
+		ret.HeaderPriority = mhf.Priority
+		ret.HeaderFlag = mhf.Flags
+		for _, field := range mhf.Fields {
+			if field.IsPseudo() {
+				ret.PseudoHeaderNameOrder = append(ret.PseudoHeaderNameOrder, field.Name)
+			} else {
+				ret.HeaderNameOrder = append(ret.HeaderNameOrder, field.Name)
+			}
+		}
+	}
+
 	ret.Priority = make([]http2PriorityFrame, len(sc.frameFramePriority))
 	for i, frame := range sc.frameFramePriority {
 		ret.Priority[i] = *frame

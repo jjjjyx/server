@@ -30,7 +30,7 @@ type FramesData struct {
 }
 
 func (d FramesData) Zero() bool {
-	return d.Increment == 0
+	return d.Increment == 0 || len(d.Setting) == 0 || len(d.HeaderNameOrder) == 0
 }
 
 // WithContext returns a shallow copy of r with its context changed
