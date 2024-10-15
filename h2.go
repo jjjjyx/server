@@ -5946,15 +5946,21 @@ func (sc *http2serverConn) processHeaders(f *http2MetaHeadersFrame) error {
 		}
 	}
 
-	sc.frameDataCache.HeaderPriority = f.Priority
-	sc.frameDataCache.HeaderFlag = f.Flags
+	var ph []string
+	var hs []string
+
 	for _, field := range f.Fields {
 		if field.IsPseudo() {
-			sc.frameDataCache.PseudoHeaderNameOrder = append(sc.frameDataCache.PseudoHeaderNameOrder, field.Name)
+			ph = append(ph, field.Name)
 		} else {
-			sc.frameDataCache.HeaderNameOrder = append(sc.frameDataCache.HeaderNameOrder, field.Name)
+			hs = append(hs, field.Name)
 		}
 	}
+
+	sc.frameDataCache.HeaderPriority = f.Priority
+	sc.frameDataCache.HeaderFlag = f.Flags
+	sc.frameDataCache.PseudoHeaderNameOrder = ph
+	sc.frameDataCache.HeaderNameOrder = hs
 
 	return sc.scheduleHandler(id, rw, req, handler)
 }
