@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"golang.org/x/net/http2/hpack"
 	"net/http"
 )
 
@@ -12,26 +13,32 @@ type RequestX struct {
 
 	ClientHello []byte
 
-	HeaderOrder []string
-
-	Headers map[string][]string
-
-	Frames FramesData
+	Frames     FramesData
+	HeaderData HeaderData
 }
 
 type FramesData struct {
-	Setting               []http2Setting
-	Increment             uint32
+	Setting   []http2Setting
+	Increment uint32
+	Priority  []http2PriorityFrame
+}
+
+func (d FramesData) Zero() bool {
+	return d.Increment == 0 || len(d.Setting) == 0
+}
+
+type HeaderData struct {
+	// 可能为空
+	Fields []hpack.HeaderField
+	// 某些情况下为空
 	HeaderNameOrder       []string
 	PseudoHeaderNameOrder []string
 	HeaderPriority        http2PriorityParam
 	HeaderFlag            http2Flags // 没什么用
-	Priority              []http2PriorityFrame
-	has                   bool
 }
 
-func (d FramesData) Zero() bool {
-	return d.Increment == 0 || len(d.HeaderNameOrder) == 0
+func (d HeaderData) Zero() bool {
+	return len(d.HeaderNameOrder) == 0 || len(d.Fields) == 0
 }
 
 // WithContext returns a shallow copy of r with its context changed

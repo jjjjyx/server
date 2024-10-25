@@ -5957,12 +5957,27 @@ func (sc *http2serverConn) processHeaders(f *http2MetaHeadersFrame) error {
 		}
 	}
 
-	sc.frameDataCache.HeaderPriority = f.Priority
-	sc.frameDataCache.HeaderFlag = f.Flags
-	sc.frameDataCache.PseudoHeaderNameOrder = ph
-	sc.frameDataCache.HeaderNameOrder = hs
+	//sc.frameDataCache.HeaderPriority = f.Priority
+	//sc.frameDataCache.HeaderFlag = f.Flags
+	//sc.frameDataCache.PseudoHeaderNameOrder = ph
+	//sc.frameDataCache.HeaderNameOrder = hs
+	//frameHD :=
+	//req.HeaderData = frameHD
 
-	return sc.scheduleHandler(id, rw, req, handler)
+	rx := &RequestX{
+		Request: req,
+		Frames:  sc.getFramesData(),
+		HeaderData: HeaderData{
+			HeaderPriority:        f.Priority,
+			HeaderFlag:            f.Flags,
+			PseudoHeaderNameOrder: ph,
+			HeaderNameOrder:       hs,
+			Fields:                f.Fields,
+		},
+		ClientHello: sc.conn.GetClientHelloRaw(),
+	}
+
+	return sc.scheduleHandler(id, rw, rx, handler)
 }
 
 //func (sc *http2serverConn) upgradeRequest(req *http.Request) {
@@ -6085,7 +6100,7 @@ func (sc *http2serverConn) newStream(id, pusherID uint32, state http2streamState
 	return st
 }
 
-func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHeadersFrame) (*http2responseWriter, *RequestX, error) {
+func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHeadersFrame) (*http2responseWriter, *http.Request, error) {
 	sc.serveG.check()
 
 	rp := http2requestParam{
@@ -6115,18 +6130,10 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 	}
 
 	rp.header = make(http.Header)
-	headerOrder := make([]string, len(f.Fields))
-	headers := make(map[string][]string, len(f.Fields))
-	for i := range f.Fields {
-		headerOrder[i] = f.Fields[i].Name
-		headers[f.Fields[i].Name] = append(headers[f.Fields[i].Name], f.Fields[i].Value)
-	}
 
 	for _, hf := range f.RegularFields() {
 		rp.header.Add(sc.canonicalHeader(hf.Name), hf.Value)
 	}
-
-	//rp.header[OriginHeaderNamesExtraKey] = originHeader
 
 	if rp.authority == "" {
 		rp.authority = rp.header.Get("Host")
@@ -6151,13 +6158,7 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 			b: &http2dataBuffer{expected: req.ContentLength},
 		}
 	}
-	return rw, &RequestX{
-		Request:     req,
-		HeaderOrder: headerOrder,
-		Headers:     headers,
-		ClientHello: sc.conn.GetClientHelloRaw(),
-		//Frames:      sc.getFramesData(),
-	}, nil
+	return rw, req, nil
 }
 
 type http2requestParam struct {
@@ -7156,12 +7157,13 @@ func (sc *http2serverConn) startPush(msg *http2startPushRequest) {
 		}
 
 		sc.curHandlers++
-		reqx := &RequestX{Request: req}
-		reqx.ClientHello = sc.conn.GetClientHelloRaw()
-		reqx.Frames = sc.getFramesData()
+		rx := &RequestX{}
+		rx.ClientHello = sc.conn.GetClientHelloRaw()
+		rx.Frames = sc.getFramesData()
+		rx.Request = req
 		// 这种情况下 header没有顺序，这个顺序无从得知
 
-		go sc.runHandler(rw, &RequestX{Request: req}, sc.handler.ServeHTTP)
+		go sc.runHandler(rw, rx, sc.handler.ServeHTTP)
 		return promisedID, nil
 	}
 

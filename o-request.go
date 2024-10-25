@@ -73,9 +73,13 @@ func readRequest(b *bufio.Reader) (req *RequestX, err error) {
 		return nil, err
 	}
 	req.Header = http.Header(mimeHeader)
-	req.Headers = mimeHeader
 
-	req.HeaderOrder = originHeaderOrder
+	req.HeaderData.HeaderNameOrder = originHeaderOrder
+	//这里的conn 不是tls 的链接所以 没有握手信息
+	// h1 的信息也只有header 的顺序的，而且这个顺序也很鸡肋
+
+	//req.Headers = mimeHeader
+	//req.HeaderOrder = originHeaderOrder
 	//req.Header[OriginHeaderNamesExtraKey] = originHeaderOrder
 
 	if len(req.Header["Host"]) > 1 {
