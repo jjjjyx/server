@@ -5970,6 +5970,7 @@ func (sc *http2serverConn) processHeaders(f *http2MetaHeadersFrame) error {
 		HeaderData: HeaderData{
 			HeaderPriority:        f.Priority,
 			HeaderFlag:            f.Flags,
+			StreamID:              f.StreamID,
 			PseudoHeaderNameOrder: ph,
 			HeaderNameOrder:       hs,
 			Fields:                f.Fields,

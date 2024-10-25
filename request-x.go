@@ -35,6 +35,7 @@ type HeaderData struct {
 	PseudoHeaderNameOrder []string
 	HeaderPriority        http2PriorityParam
 	HeaderFlag            http2Flags // 没什么用
+	StreamID              uint32
 }
 
 func (d HeaderData) Zero() bool {
