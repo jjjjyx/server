@@ -38,7 +38,7 @@ type HeaderData struct {
 }
 
 func (d HeaderData) Zero() bool {
-	return len(d.HeaderNameOrder) == 0 || len(d.Fields) == 0
+	return len(d.HeaderNameOrder) == 0 && len(d.Fields) == 0
 }
 
 // WithContext returns a shallow copy of r with its context changed
